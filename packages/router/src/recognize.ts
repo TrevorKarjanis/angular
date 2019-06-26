@@ -112,26 +112,28 @@ class Recognizer {
       outlet: string): TreeNode<ActivatedRouteSnapshot>[] {
     if (route.redirectTo) throw new NoMatch();
 
-    if ((route.outlet || PRIMARY_OUTLET) !== outlet) throw new NoMatch();
-
     let snapshot: ActivatedRouteSnapshot;
     let consumedSegments: UrlSegment[] = [];
     let rawSlicedSegments: UrlSegment[] = [];
 
     if (route.path === '**') {
+      if (getOutlet(route) !== outlet) {
+        throw new NoMatch();
+      }
+
       const params = segments.length > 0 ? last(segments) !.parameters : {};
       snapshot = new ActivatedRouteSnapshot(
           segments, params, Object.freeze({...this.urlTree.queryParams}), this.urlTree.fragment !,
           getData(route), outlet, route.component !, route, getSourceSegmentGroup(rawSegment),
           getPathIndexShift(rawSegment) + segments.length, getResolve(route));
     } else {
-      const result: MatchResult = match(rawSegment, route, segments);
+      const result: MatchResult = match(rawSegment, route, segments, outlet);
       consumedSegments = result.consumedSegments;
       rawSlicedSegments = segments.slice(result.lastChild);
 
       snapshot = new ActivatedRouteSnapshot(
           consumedSegments, result.parameters, Object.freeze({...this.urlTree.queryParams}),
-          this.urlTree.fragment !, getData(route), outlet, route.component !, route,
+          this.urlTree.fragment !, getData(route), getOutlet(route), route.component !, route,
           getSourceSegmentGroup(rawSegment),
           getPathIndexShift(rawSegment) + consumedSegments.length, getResolve(route));
     }
@@ -150,7 +152,8 @@ class Recognizer {
       return [new TreeNode<ActivatedRouteSnapshot>(snapshot, [])];
     }
 
-    const children = this.processSegment(childConfig, segmentGroup, slicedSegments, PRIMARY_OUTLET);
+    outlet = (consumedSegments.length ? PRIMARY_OUTLET : outlet);
+    const children = this.processSegment(childConfig, segmentGroup, slicedSegments, outlet);
     return [new TreeNode<ActivatedRouteSnapshot>(snapshot, children)];
   }
 }
@@ -181,13 +184,19 @@ interface MatchResult {
   parameters: any;
 }
 
-function match(segmentGroup: UrlSegmentGroup, route: Route, segments: UrlSegment[]): MatchResult {
+function match(
+    segmentGroup: UrlSegmentGroup, route: Route, segments: UrlSegment[],
+    outlet: string): MatchResult {
   if (route.path === '') {
     if (route.pathMatch === 'full' && (segmentGroup.hasChildren() || segments.length > 0)) {
       throw new NoMatch();
     }
 
     return {consumedSegments: [], lastChild: 0, parameters: {}};
+  }
+
+  if (getOutlet(route) !== outlet) {
+    throw new NoMatch();
   }
 
   const matcher = route.matcher || defaultUrlMatcher;

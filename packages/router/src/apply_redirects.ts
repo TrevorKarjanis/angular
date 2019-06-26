@@ -176,12 +176,12 @@ class ApplyRedirects {
   private expandSegmentAgainstRoute(
       ngModule: NgModuleRef<any>, segmentGroup: UrlSegmentGroup, routes: Route[], route: Route,
       paths: UrlSegment[], outlet: string, allowRedirects: boolean): Observable<UrlSegmentGroup> {
-    if (getOutlet(route) !== outlet) {
-      return noMatch(segmentGroup);
+    if (route.redirectTo === undefined) {
+      return this.matchSegmentAgainstRoute(ngModule, segmentGroup, route, paths, outlet);
     }
 
-    if (route.redirectTo === undefined) {
-      return this.matchSegmentAgainstRoute(ngModule, segmentGroup, route, paths);
+    if (getOutlet(route) !== outlet) {
+      return noMatch(segmentGroup);
     }
 
     if (allowRedirects && this.allowRedirects) {
@@ -222,7 +222,7 @@ class ApplyRedirects {
       ngModule: NgModuleRef<any>, segmentGroup: UrlSegmentGroup, routes: Route[], route: Route,
       segments: UrlSegment[], outlet: string): Observable<UrlSegmentGroup> {
     const {matched, consumedSegments, lastChild, positionalParamSegments} =
-        match(segmentGroup, route, segments);
+        match(segmentGroup, route, segments, outlet);
     if (!matched) return noMatch(segmentGroup);
 
     const newTree = this.applyRedirectCommands(
@@ -240,8 +240,12 @@ class ApplyRedirects {
 
   private matchSegmentAgainstRoute(
       ngModule: NgModuleRef<any>, rawSegmentGroup: UrlSegmentGroup, route: Route,
-      segments: UrlSegment[]): Observable<UrlSegmentGroup> {
+      segments: UrlSegment[], outlet: string): Observable<UrlSegmentGroup> {
     if (route.path === '**') {
+      if (getOutlet(route) !== outlet) {
+        return noMatch(rawSegmentGroup);
+      }
+
       if (route.loadChildren) {
         return this.configLoader.load(ngModule.injector, route)
             .pipe(map((cfg: LoadedRouterConfig) => {
@@ -253,7 +257,7 @@ class ApplyRedirects {
       return of (new UrlSegmentGroup(segments, {}));
     }
 
-    const {matched, consumedSegments, lastChild} = match(rawSegmentGroup, route, segments);
+    const {matched, consumedSegments, lastChild} = match(rawSegmentGroup, route, segments, outlet);
     if (!matched) return noMatch(rawSegmentGroup);
 
     const rawSlicedSegments = segments.slice(lastChild);
@@ -276,8 +280,9 @@ class ApplyRedirects {
         return of (new UrlSegmentGroup(consumedSegments, {}));
       }
 
+      outlet = (consumedSegments.length ? PRIMARY_OUTLET : outlet);
       const expanded$ = this.expandSegment(
-          childModule, segmentGroup, childConfig, slicedSegments, PRIMARY_OUTLET, true);
+          childModule, segmentGroup, childConfig, slicedSegments, outlet, true);
       return expanded$.pipe(
           map((cs: UrlSegmentGroup) =>
                   new UrlSegmentGroup(consumedSegments.concat(cs.segments), cs.children)));
@@ -424,7 +429,7 @@ function runCanLoadGuard(
   return obs.pipe(concatAll(), every(result => result === true));
 }
 
-function match(segmentGroup: UrlSegmentGroup, route: Route, segments: UrlSegment[]): {
+function match(segmentGroup: UrlSegmentGroup, route: Route, segments: UrlSegment[], outlet: string): {
   matched: boolean,
   consumedSegments: UrlSegment[],
   lastChild: number,
@@ -436,6 +441,10 @@ function match(segmentGroup: UrlSegmentGroup, route: Route, segments: UrlSegment
     }
 
     return {matched: true, consumedSegments: [], lastChild: 0, positionalParamSegments: {}};
+  }
+
+  if (getOutlet(route) !== outlet) {
+    return {matched: false, consumedSegments: [], lastChild: 0, positionalParamSegments: {}};
   }
 
   const matcher = route.matcher || defaultUrlMatcher;
