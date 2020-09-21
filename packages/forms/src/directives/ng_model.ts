@@ -17,7 +17,7 @@ import {ControlValueAccessor, NG_VALUE_ACCESSOR} from './control_value_accessor'
 import {NgControl} from './ng_control';
 import {NgForm} from './ng_form';
 import {NgModelGroup} from './ng_model_group';
-import {composeAsyncValidators, composeValidators, controlPath, isPropertyUpdated, selectValueAccessor, setUpControl} from './shared';
+import {cleanUpControl, composeAsyncValidators, composeValidators, controlPath, isPropertyUpdated, selectValueAccessor, setUpControl} from './shared';
 import {TemplateDrivenErrors} from './template_driven_errors';
 import {AsyncValidator, AsyncValidatorFn, Validator, ValidatorFn} from './validators';
 
@@ -216,7 +216,10 @@ export class NgModel extends NgControl implements OnChanges, OnDestroy {
   /** @nodoc */
   ngOnChanges(changes: SimpleChanges) {
     this._checkForErrors();
-    if (!this._registered) this._setUpControl();
+    // if (!this._registered) this._setUpControl();
+    if ('options' in changes) {
+      this._updateOptions(changes);
+    }
     if ('isDisabled' in changes) {
       this._updateDisabled(changes);
     }
@@ -278,12 +281,6 @@ export class NgModel extends NgControl implements OnChanges, OnDestroy {
     this.update.emit(newValue);
   }
 
-  private _setUpControl(): void {
-    this._setUpdateStrategy();
-    this._isStandalone() ? this._setUpStandalone() : this.formDirective.addControl(this);
-    this._registered = true;
-  }
-
   private _setUpdateStrategy(): void {
     if (this.options && this.options.updateOn != null) {
       this.control._updateOn = this.options.updateOn;
@@ -292,11 +289,6 @@ export class NgModel extends NgControl implements OnChanges, OnDestroy {
 
   private _isStandalone(): boolean {
     return !this._parent || !!(this.options && this.options.standalone);
-  }
-
-  private _setUpStandalone(): void {
-    setUpControl(this.control, this);
-    this.control.updateValueAndValidity({emitEvent: false});
   }
 
   private _checkForErrors(): void {
@@ -343,5 +335,36 @@ export class NgModel extends NgControl implements OnChanges, OnDestroy {
         this.control.enable();
       }
     });
+  }
+
+  private _updateOptions(changes: SimpleChanges) {
+    const change = changes.options;
+    const currentValue = change.currentValue;
+    const previousValue = change.previousValue;
+    if (change.isFirstChange()) {
+      this._setUpdateStrategy();
+      setUpControl(this.control, this);
+      if (this._isStandalone()) {
+        this.control.updateValueAndValidity({emitEvent: false});
+      } else {
+        this.formDirective.addControl(this);
+      }
+      return;
+    }
+    if (currentValue.name !== previousValue.name) {
+      this._checkName();
+    }
+    if (currentValue.updateOn !== previousValue.updateOn) {
+      // cleanUpControl(this.control, this);
+      this._setUpdateStrategy();
+      // setUpControl(this.control, this);
+    }
+    if (currentValue.standalone !== previousValue.standalone) {
+      if (this._isStandalone()) {
+        this.formDirective.removeControl(this);
+      } else {
+        this.formDirective.addControl(this);
+      }
+    }
   }
 }

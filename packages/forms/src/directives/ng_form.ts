@@ -189,7 +189,6 @@ export class NgForm extends ControlContainer implements Form, AfterViewInit {
       const container = this._findContainer(dir.path);
       (dir as {control: FormControl}).control =
           <FormControl>container.registerControl(dir.name, dir.control);
-      setUpControl(dir.control, dir);
       dir.control.updateValueAndValidity({emitEvent: false});
       this._directives.push(dir);
     });
